@@ -22,7 +22,7 @@ jobs:
 
       - name: Get changed modules
         run: |
-          changed_scripts="$(dirname $(git diff --name-only origin/main...HEAD) | sort -u | grep -Ev "(\^.|\.github)" | tr '\n' ' ')"
+          changed_modules="$(dirname $(git diff --name-only origin/main...HEAD) | sort -u | grep -Ev "(\^.|\.github)" | tr '\n' ' ')"
           echo "changed_modules=$changed_modules" >> $GITHUB_ENV
 
       - name: Determine commit type
