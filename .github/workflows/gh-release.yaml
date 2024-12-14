@@ -63,5 +63,5 @@ jobs:
         run: |
           for module in $changed_modules; do
             commit_type=$(printenv "$module")
-            ./gh-release-creator.sh "$module" "$commit_type"
+            ./gh-release-creator/gh-release-creator.sh "$module" "$commit_type"
           done
