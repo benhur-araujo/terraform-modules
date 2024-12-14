@@ -61,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          for module in $changed_module; do
+          for module in $changed_modules; do
             commit_type=$(printenv "$module")
             ./gh-release-creator.sh "$module" "$commit_type"
           done
