@@ -1,4 +1,5 @@
 resource "azurerm_cosmosdb_account" "cosmosdb_account" {
+#
   for_each = var.cosmosdb_account
   name                      = each.key
   location                  = var.location
