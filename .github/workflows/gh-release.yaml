@@ -7,6 +7,9 @@ on:
       - ".github/**"
       - "README.md"
 
+env:
+  GH_RELEASE_CREATOR_VERSION: "v1.0.0"
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -49,19 +52,15 @@ jobs:
             commit_type=$(printenv "$module")
             echo "Changed module: $module. Commit type: $commit_type"
           done
-          
-      - name: Checkout gh-release-creator.sh
-        uses: actions/checkout@v4
-        with:
-          repository: benhur-araujo/bash-scripts
-          sparse-checkout: gh-release-creator/gh-release-creator.sh
-      
+
       - name: Create release
         if: github.event.pull_request.merged == true 
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          curl -sSL -o gh-release-creator.tar.gz https://github.com/benhur-araujo/bash-scripts/archive/refs/tags/gh-release-creator-$GH_RELEASE_CREATOR_VERSION.tar.gz
+          tar -zxf gh-release-creator.tar.gz && cd bash-scripts-gh-release-creator-$GH_RELEASE_CREATOR_VERSION/gh-release-creator
           for module in $changed_modules; do
             commit_type=$(printenv "$module")
-            ./gh-release-creator/gh-release-creator.sh "$module" "$commit_type"
+            ./gh-release-creator.sh "$module" "$commit_type"
           done
