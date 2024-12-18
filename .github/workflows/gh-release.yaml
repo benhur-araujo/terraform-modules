@@ -7,9 +7,6 @@ on:
       - ".github/**"
       - "README.md"
 
-env:
-  GH_RELEASE_CREATOR_VERSION: "v1.0.0"
-
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -26,13 +23,14 @@ jobs:
       - name: Get changed modules
         run: |
           changed_modules="$(dirname $(git diff --name-only origin/main...HEAD) | sort -u | grep -Ev "(\^.|\.github)" | tr '\n' ' ')"
-          echo "changed_modules=$changed_modules" >> $GITHUB_ENV
+          echo "changed_modules=$changed_modules" >> "$GITHUB_ENV"
 
-      - name: Determine commit type
+      - name: Get commit type
         run: |
           declare -A commit_types
           for module in $changed_modules; do
               commit_message=$(git log -1 --pretty=%B -- "$module")
+              module="$(echo $module | tr '/' '_')"
               if [[ "$commit_message" == *"feat!"* ]]; then
                   commit_types[$module]="major"
               elif [[ "$commit_message" == *"feat"* ]]; then
@@ -43,24 +41,54 @@ jobs:
           done
         
           for module in "${!commit_types[@]}"; do
-              echo "$module=${commit_types[$module]}" >> $GITHUB_ENV
+              echo "${module}_commit_type=${commit_types[$module]}" >> "$GITHUB_ENV"
           done
 
-      - name: Output changed modules and commit types
+      - name: Get latest repo tag
         run: |
           for module in $changed_modules; do
-            commit_type=$(printenv "$module")
-            echo "Changed module: $module. Commit type: $commit_type"
+            module="$(echo $module | tr '/' '_')"
+            current_tag="$(git tag --sort=-v:refname | grep "$module" | head -n 1 | sed "s|$module-v||")"
+
+            if [[ "$current_tag" == "" ]]; then
+              echo "${module}_current_tag=none" >> "$GITHUB_ENV"
+            else
+              echo "${module}_current_tag=$current_tag" >> "$GITHUB_ENV"
+            fi
           done
 
-      - name: Create release
-        if: github.event.pull_request.merged == true 
+      - name: Create GH release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
         run: |
-          curl -sSL -o gh-release-creator.tar.gz https://github.com/benhur-araujo/bash-scripts/archive/refs/tags/gh-release-creator-$GH_RELEASE_CREATOR_VERSION.tar.gz
-          tar -zxf gh-release-creator.tar.gz && cd bash-scripts-gh-release-creator-$GH_RELEASE_CREATOR_VERSION/gh-release-creator
           for module in $changed_modules; do
-            commit_type=$(printenv "$module")
-            ./gh-release-creator.sh "$module" "$commit_type"
-          done
+            module="$(echo $module | tr '/' '_')"
+            module_current_tag="$(eval echo \$${module}_current_tag)"
+            echo "current tag: $module_current_tag"
+
+            if [[ "$module_current_tag" == "none" ]]; then
+              tag="$module-v1.0.0"
+              git tag "$tag"
+              git push origin "$tag"
+              gh release create "$tag" --title "$tag" --notes "$tag"
+            else
+              IFS='.' read -r major minor patch <<< "$module_current_tag"
+              commit_type="$(eval echo \$${module}_commit_type)"
+              echo "$commit_type"
+              if [[ "$commit_type" == "major" ]]; then
+                major=$((major + 1))
+                minor=0
+                patch=0
+              elif [[ "$commit_type" == "minor" ]]; then
+                  minor=$((minor + 1))
+                  patch=0
+              elif [[ "$commit_type" == "patch" ]]; then
+                  patch=$((patch + 1))
+              fi
+            
+              tag="$module-v$major.$minor.$patch"
+              git tag "$tag"
+              git push origin "$tag"
+              gh release create "$tag" --title "$tag" --notes "$tag"
+            fi
+          done 
