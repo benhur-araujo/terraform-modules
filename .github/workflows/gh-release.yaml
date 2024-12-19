@@ -1,0 +1,122 @@
+name: GitHub Release
+
+on:
+  pull_request:
+    types: [opened, closed, reopened, synchronize]
+    paths-ignore:
+      - ".github/**"
+      - "README.md"
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Fetch main branch
+        run: git fetch origin main
+
+      - name: Get changed modules
+        run: |
+          changed_modules="$(dirname $(git diff --name-only origin/main...HEAD) | sort -u | grep -Ev "(\^.|\.github)" | tr '\n' ' ')"
+          echo "changed_modules=$changed_modules" >> "$GITHUB_ENV"
+
+      - name: Get commit type
+        run: |
+          declare -A commit_types
+          for module in $changed_modules; do
+              commit_message=$(git log -1 --pretty=%B -- "$module")
+              module="$(echo $module | tr '/' '_')"
+              if [[ "$commit_message" == *"feat!"* ]]; then
+                  commit_types[$module]="major"
+              elif [[ "$commit_message" == *"feat"* ]]; then
+                  commit_types[$module]="minor"
+              else
+                  commit_types[$module]="patch"
+              fi
+          done
+        
+          for module in "${!commit_types[@]}"; do
+              echo "${module}_commit_type=${commit_types[$module]}" >> "$GITHUB_ENV"
+          done
+
+      - name: Get latest repo tag
+        run: |
+          for module in $changed_modules; do
+            module="$(echo $module | tr '/' '_')"
+            current_tag="$(git tag --sort=-v:refname | grep "$module" | head -n 1 | sed "s|$module-v||")"
+
+            if [[ "$current_tag" == "" ]]; then
+              echo "${module}_current_tag=none" >> "$GITHUB_ENV"
+            else
+              echo "${module}_current_tag=$current_tag" >> "$GITHUB_ENV"
+            fi
+          done
+
+      - name: Output GH releases
+        if: github.event.pull_request.merged = false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        run: |
+          for module in $changed_modules; do
+            module="$(echo $module | tr '/' '_')"
+            module_current_tag="$(eval echo \$${module}_current_tag)"
+
+            if [[ "$module_current_tag" == "none" ]]; then
+              echo "Relase to be created: $module-v1.0.0"
+            else
+              IFS='.' read -r major minor patch <<< "$module_current_tag"
+              commit_type="$(eval echo \$${module}_commit_type)"
+              if [[ "$commit_type" == "major" ]]; then
+                major=$((major + 1))
+                minor=0
+                patch=0
+              elif [[ "$commit_type" == "minor" ]]; then
+                  minor=$((minor + 1))
+                  patch=0
+              elif [[ "$commit_type" == "patch" ]]; then
+                  patch=$((patch + 1))
+              fi
+            
+              echo "Release to be created: $module-v$major.$minor.$patch"
+            fi
+          done 
+
+      - name: Create GH releases
+        if: github.event.pull_request.merged == true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
+        run: |
+          for module in $changed_modules; do
+            module="$(echo $module | tr '/' '_')"
+            module_current_tag="$(eval echo \$${module}_current_tag)"
+
+            if [[ "$module_current_tag" == "none" ]]; then
+              tag="$module-v1.0.0"
+              git tag "$tag"
+              git push origin "$tag"
+              gh release create "$tag" --title "$tag" --notes "$tag"
+            else
+              IFS='.' read -r major minor patch <<< "$module_current_tag"
+              commit_type="$(eval echo \$${module}_commit_type)"
+              if [[ "$commit_type" == "major" ]]; then
+                major=$((major + 1))
+                minor=0
+                patch=0
+              elif [[ "$commit_type" == "minor" ]]; then
+                  minor=$((minor + 1))
+                  patch=0
+              elif [[ "$commit_type" == "patch" ]]; then
+                  patch=$((patch + 1))
+              fi
+            
+              tag="$module-v$major.$minor.$patch"
+              git tag "$tag"
+              git push origin "$tag"
+              gh release create "$tag" --title "$tag" --notes "$tag"
+            fi
+          done 
