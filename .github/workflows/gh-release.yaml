@@ -58,7 +58,7 @@ jobs:
           done
 
       - name: Output GH releases
-        if: github.event.pull_request.merged = false
+        if: github.event.pull_request.merged == false
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
         run: |
